@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="2009scape Server Status - Check the availability of 2009scape services">
+    <title>2009scape Server Status</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏰</text></svg>">
+    <style>
+        :root {
+            --primary-color: #5D87A1;
+            --secondary-color: #844D0E;
+            --text-color: #333;
+            --bg-color: #f9f9f9;
+            --card-bg: #ffffff;
+            --border-color: #ddd;
+            --success-color: #4CAF50;
+            --warning-color: #FF9800;
+            --error-color: #F44336;
+            --unknown-color: #9E9E9E;
+        }
+
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --text-color: #f0f0f0;
+                --bg-color: #121212;
+                --card-bg: #1e1e1e;
+                --border-color: #333;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 20px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        h1, h2, h3 {
+            color: var(--text-color);
+            border-bottom: 2px solid var(--primary-color);
+            padding-bottom: 8px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 2rem;
+        }
+
+        h2 {
+            font-size: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 3px rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: bold;
+        }
+
+        tr:hover {
+            background-color: rgba(93, 135, 161, 0.1);
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 4px;
+            color: white;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        .status::before {
+            content: "";
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .online {
+            background-color: var(--success-color);
+        }
+
+        .online::before {
+            background-color: #fff;
+            animation: pulse 1.5s infinite;
+        }
+
+        .offline {
+            background-color: var(--error-color);
+        }
+
+        .unknown {
+            background-color: var(--unknown-color);
+        }
+
+        @keyframes pulse {
+            0% {
+                opacity: 0.5;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
+            100% {
+                opacity: 0.5;
+                transform: scale(1);
+            }
+        }
+
+        .description {
+            max-width: 400px;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo img, .logo svg {
+            margin-right: 10px;
+            height: 2rem;
+        }
+
+        .rs-blue {
+            color: var(--primary-color);
+        }
+
+        .rs-brown {
+            color: var(--secondary-color);
+        }
+
+        footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            color: #666;
+            text-align: center;
+        }
+
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        a:hover {
+            text-decoration: underline;
+            color: var(--secondary-color);
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1rem;
+        }
+
+        .feature-item {
+            display: flex;
+            flex-direction: column;
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            padding: 1rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .feature-item h3 {
+            margin: 0 0 10px 0;
+            padding: 0;
+            border: none;
+            font-size: 1.1rem;
+        }
+
+        .feature-icon {
+            font-size: 1.5rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .last-updated {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 10px;
+            text-align: right;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .feature-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            table {
+                display: block;
+                overflow-x: auto;
+            }
+            
+            .description {
+                max-width: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="card">
+            <div class="logo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M7 14V15H5V14H3V12H5V10H7V12H9V14H7Z" fill="#5D87A1" stroke="#5D87A1" stroke-width="1"/>
+                    <path d="M3 21H21V20H3V21Z" fill="#844D0E" stroke="#844D0E"/>
+                    <path d="M5 20V9L12 4L19 9V20H5Z" stroke="#5D87A1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                </svg>
+                <span><span class="rs-blue">2009</span><span class="rs-brown">scape</span></span>
+            </div>
+            <h1>System Status</h1>
+            <p>Welcome to the 2009scape server status page. Check the availability of various components and services below.</p>
+        </header>
+
+        <section class="card" id="services-section">
+            <h2>Services Status</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Service</th>
+                        <th>Address</th>
+                        <th>Status</th>
+                        <th>Description</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Game Server</td>
+                        <td><code>app:43595</code></td>
+                        <td><span class="status" id="status-gameserver">Checking...</span></td>
+                        <td class="description">Main 2009scape game server for RuneScape connections</td>
+                    </tr>
+                    <tr>
+                        <td>Web Client</td>
+                        <td><a href="/">Web Client</a></td>
+                        <td><span class="status" id="status-webclient">Checking...</span></td>
+                        <td class="description">Browser-based game client using noVNC</td>
+                    </tr>
+                    <tr>
+                        <td>Database</td>
+                        <td><code>database:3306</code></td>
+                        <td><span class="status" id="status-database">Checking...</span></td>
+                        <td class="description">MySQL database storing game data and player information</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="last-updated">Last checked: <span id="last-checked">Just now</span></div>
+        </section>
+
+        <section class="card">
+            <h2>2009scape Features</h2>
+            <div class="feature-grid">
+                <div class="feature-item">
+                    <div class="feature-icon">🏰</div>
+                    <h3>Authentic 2009 Era</h3>
+                    <p>Experience RuneScape as it was in 2009, with accurate gameplay and content</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🧙‍♂️</div>
+                    <h3>Skills & Combat</h3>
+                    <p>All 23 skills and the original combat system from 2009</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🗺️</div>
+                    <h3>World Map</h3>
+                    <p>Explore the complete world map with all areas and dungeons</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">⚔️</div>
+                    <h3>Quests</h3>
+                    <p>Original quest system with many quests implemented</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">👪</div>
+                    <h3>Multiplayer</h3>
+                    <p>Play with friends in a complete multiplayer environment</p>
+                </div>
+                <div class="feature-item">
+                    <div class="feature-icon">🌐</div>
+                    <h3>Web Client</h3>
+                    <p>Play directly through your browser with the web-based client</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>System Details</h2>
+            <p>
+                The 2009scape server is a containerized application running in Docker. The platform provides 
+                an authentic recreation of RuneScape as it was in 2009, with high performance 
+                and reliability.
+            </p>
+            <br>
+            <p>
+                Built with Java and utilizing a MySQL database, the server delivers a complete 
+                MMO experience that's accessible through both the web-based client and native clients.
+            </p>
+        </section>
+    </div>
+
+    <footer>
+        <p>2009scape © 2009-<span id="current-year">2023</span> | <a href="https://gitlab.com/2009scape/2009scape" target="_blank">GitLab Project</a> | Non-commercial fan recreation of RuneScape from 2009</p>
+    </footer>
+
+    <script>
+        // Update current year
+        document.getElementById('current-year').textContent = new Date().getFullYear();
+
+        // Function to check service status
+        async function checkServiceStatus() {
+            const services = [
+                { id: 'status-gameserver', url: '/game-status' },
+                { id: 'status-webclient', url: '/' },
+                { id: 'status-database', url: '/db-status' }
+            ];
+
+            for (const service of services) {
+                const statusElement = document.getElementById(service.id);
+                statusElement.textContent = 'Checking...';
+                statusElement.className = 'status unknown';
+
+                try {
+                    const startTime = Date.now();
+                    const response = await fetch(service.url, {
+                        method: 'HEAD',
+                        cache: 'no-store',
+                        timeout: 5000
+                    });
+                    const responseTime = Date.now() - startTime;
+
+                    if (response.ok) {
+                        statusElement.textContent = `Online (${responseTime}ms)`;
+                        statusElement.className = 'status online';
+                    } else {
+                        statusElement.textContent = `Error (${response.status})`;
+                        statusElement.className = 'status offline';
+                    }
+                } catch (error) {
+                    statusElement.textContent = 'Offline';
+                    statusElement.className = 'status offline';
+                }
+            }
+
+            // Update last checked time
+            document.getElementById('last-checked').textContent = new Date().toLocaleTimeString();
+        }
+
+        // Check status on page load
+        checkServiceStatus();
+
+        // Set up periodic status checks
+        setInterval(checkServiceStatus, 60000); // Check every minute
+    </script>
+</body>
+</html>

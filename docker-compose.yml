@@ -1,0 +1,59 @@
+services:
+  app:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: "2009scape_app"
+    depends_on:
+      - database
+    restart: unless-stopped
+    volumes:
+      - "2009scape_app:/app"
+    ports:
+      - "43595:43595"
+    networks:
+      - 2009scape_network
+
+  database:
+    image: mysql:latest
+    container_name: "2009scape_db"
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - "2009scape_db:/var/lib/mysql"
+      - "./server/Server/db_exports/global.sql:/docker-entrypoint-initdb.d/global.sql"
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+      MYSQL_ROOT_PASSWORD: "567326"
+      MYSQL_ROOT_USER: "jordan"
+    networks:
+      - 2009scape_network
+
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: "2009scape_client"
+    restart: unless-stopped
+    ports:
+      - "6080:6080"
+      - "5900:5900"
+    environment:
+      - SERVER_HOST=app
+      - SERVER_PORT=43595
+      - DISPLAY=:1
+    depends_on:
+      - app
+    networks:
+      - 2009scape_network
+
+
+
+volumes:
+  2009scape_app:
+  2009scape_db:
+
+networks:
+  2009scape_network:
+    driver: bridge
