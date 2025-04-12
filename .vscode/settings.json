@@ -1,14 +1,4 @@
 {
-    "python.defaultInterpreterPath": "/home/jordan/.venv/bin/python",
-    "python.experiments.enabled": false,
-    "python.analysis.autoImportCompletions": false,
-    "python.analysis.typeCheckingMode": "basic",
-    "python.testing.unittestEnabled": true,
-    "python.testing.pytestEnabled": true,
-    "python.analysis.extraPaths": [
-        "${workspaceFolder}",
-        "${workspaceFolder}/src"
-    ],
     "editor.formatOnSave": true,
     "files.autoSave": "afterDelay",
     "files.autoSaveDelay": 1000,
@@ -19,6 +9,4 @@
         "**/*.pyo": true,
         "**/*.sync-conflict-": true
     },
-    "python.envFile": "${workspaceFolder}/.env",
-    "python.terminal.activateEnvironment": true
 }
