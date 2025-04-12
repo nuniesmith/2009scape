@@ -8,27 +8,39 @@ services:
       - database
     restart: unless-stopped
     volumes:
-      - "2009scape_app:/app"
+      - "2009scape_app:/app/2009scape"  # Changed to match WORKDIR
+    environment:
+      - TZ=America/New_York
     ports:
       - "43595:43595"
     networks:
       - 2009scape_network
+    healthcheck:
+      test: ["CMD", "netstat", "-an", "|", "grep", "43595"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   database:
-    image: mysql:latest
+    image: mysql:8.0
     container_name: "2009scape_db"
     restart: always
     ports:
       - "3306:3306"
     volumes:
       - "2009scape_db:/var/lib/mysql"
-      - "./server/Server/db_exports/global.sql:/docker-entrypoint-initdb.d/global.sql"
     environment:
-      MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-      MYSQL_ROOT_PASSWORD: "567326"
-      MYSQL_ROOT_USER: "jordan"
+      - TZ=America/New_York
+      - MYSQL_ROOT_PASSWORD=567326
+      - MYSQL_ROOT_USER=jordan
+      - MYSQL_DATABASE=2009scape
     networks:
       - 2009scape_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ujordan", "-p567326"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
 
   client:
     build:
@@ -39,7 +51,10 @@ services:
     ports:
       - "6080:6080"
       - "5900:5900"
+    volumes:
+      - "2009scape_client:/app"
     environment:
+      - TZ=America/New_York
       - SERVER_HOST=app
       - SERVER_PORT=43595
       - DISPLAY=:1
@@ -48,11 +63,35 @@ services:
     networks:
       - 2009scape_network
 
-
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: "2009scape_nginx"
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx:/etc/nginx/conf.d:ro
+      - ./config/html:/usr/share/nginx/html:ro
+    environment:
+      - TZ=America/New_York
+    ports:
+      - "80:80"
+      - "443:443"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    depends_on:
+      - app
+      - client
+      - database
+    networks:
+      - 2009scape_network
 
 volumes:
   2009scape_app:
   2009scape_db:
+  2009scape_client:
 
 networks:
   2009scape_network:
