@@ -1,38 +1,53 @@
 services:
   app:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./server/Dockerfile
     container_name: "2009scape_app"
     depends_on:
-      - database
+      database:
+        condition: service_healthy
     restart: unless-stopped
     volumes:
-      - "2009scape_app:/app/2009scape"  # Changed to match WORKDIR
+      - "2009scape_app_data:/app/2009scape/data"
+      - "2009scape_app_logs:/app/2009scape/logs"
     environment:
       - TZ=America/New_York
+      - MYSQL_HOST=database
+      - MYSQL_USER=jordan
+      - MYSQL_PASSWORD=567326
+      - MYSQL_DATABASE=2009scape
     ports:
-      - "43595:43595"
+      - "43594-43596:43594-43596"
     networks:
       - 2009scape_network
     healthcheck:
-      test: ["CMD", "netstat", "-an", "|", "grep", "43595"]
+      test: ["CMD", "nc", "-z", "localhost", "43594"]
       interval: 30s
       timeout: 10s
       retries: 3
-
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '8'
+          memory: 8G
+    user: "1001:1001"
+    
   database:
-    image: mysql:8.0
+    image: mysql:latest
     container_name: "2009scape_db"
     restart: always
     ports:
       - "3306:3306"
     volumes:
       - "2009scape_db:/var/lib/mysql"
+      - "./config/mysql/init:/docker-entrypoint-initdb.d"
     environment:
       - TZ=America/New_York
       - MYSQL_ROOT_PASSWORD=567326
-      - MYSQL_ROOT_USER=jordan
+      - MYSQL_USER=jordan
+      - MYSQL_PASSWORD=567326
       - MYSQL_DATABASE=2009scape
     networks:
       - 2009scape_network
@@ -41,30 +56,48 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+    
   client:
     build:
-      context: ./client
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./client/Dockerfile
     container_name: "2009scape_client"
     restart: unless-stopped
     ports:
       - "6080:6080"
       - "5900:5900"
     volumes:
-      - "2009scape_client:/app"
+      - "2009scape_client_config:/home/appuser/.config"
     environment:
       - TZ=America/New_York
       - SERVER_HOST=app
-      - SERVER_PORT=43595
+      - SERVER_PORT=43594
       - DISPLAY=:1
+      - VNC_PASSWORD=password
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     networks:
       - 2009scape_network
-
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "6080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+    user: "1001:1001"
+    
   nginx:
-    image: nginx:1.25-alpine
+    image: nginx:latest
     container_name: "2009scape_nginx"
     volumes:
       - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
@@ -82,17 +115,35 @@ services:
       retries: 3
     restart: unless-stopped
     depends_on:
-      - app
-      - client
-      - database
+      app:
+        condition: service_healthy
+      client:
+        condition: service_healthy
+      database:
+        condition: service_healthy
     networks:
       - 2009scape_network
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
-  2009scape_app:
+  2009scape_app_data:
+    name: 2009scape_app_data
+  2009scape_app_logs:
+    name: 2009scape_app_logs
   2009scape_db:
-  2009scape_client:
+    name: 2009scape_db
+  2009scape_client_config:
+    name: 2009scape_client_config
 
 networks:
   2009scape_network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+    name: 2009scape_network

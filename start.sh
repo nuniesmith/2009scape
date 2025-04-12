@@ -279,14 +279,14 @@ EOF
 case $COMMAND in
     start)
         # Create necessary directories if they don't exist
-        mkdir -p Server/db_exports
+        mkdir -p server/db_exports
         
         # Prepare NGINX files if needed
         prepare_nginx
 
         # Check if global.sql exists
         if [ ! -f ./Server/db_exports/global.sql ]; then
-            echo -e "${YELLOW}Warning: global.sql not found in Server/db_exports/.${NC}"
+            echo -e "${YELLOW}Warning: global.sql not found in server/db_exports/.${NC}"
             echo -e "${YELLOW}Make sure to provide this file or the database initialization will fail.${NC}"
         fi
 
