@@ -1,0 +1,119 @@
+rs2009-client/
+├── Cargo.toml
+├── Cargo.lock
+├── README.md
+├── .gitignore
+├── docker/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   └── docker-compose.yml
+├── web/
+│   ├── package.json
+│   ├── webpack.config.js
+│   ├── tsconfig.json
+│   ├── index.html
+│   ├── src/
+│   │   ├── index.ts
+│   │   ├── renderer/
+│   │   │   ├── canvas.ts
+│   │   │   ├── model.ts
+│   │   │   └── scene.ts
+│   │   ├── ui/
+│   │   │   ├── chat.ts
+│   │   │   ├── inventory.ts
+│   │   │   ├── skills.ts
+│   │   │   └── interface.ts
+│   │   └── net/
+│   │       ├── websocket.ts
+│   │       └── protocol.ts
+│   └── assets/
+│       ├── images/
+│       └── styles/
+│           └── main.css
+└── src/
+    ├── main.rs
+    ├── lib.rs
+    ├── bin/
+    │   └── client.rs
+    ├── net/
+    │   ├── mod.rs
+    │   ├── buffer.rs
+    │   ├── codec.rs
+    │   ├── connection.rs
+    │   ├── handshake.rs
+    │   ├── isaac.rs
+    │   ├── packet.rs
+    │   ├── packet_handlers/
+    │   │   ├── mod.rs
+    │   │   ├── login.rs
+    │   │   ├── game.rs
+    │   │   └── js5.rs
+    │   └── websocket/
+    │       ├── mod.rs
+    │       ├── server.rs
+    │       └── handler.rs
+    ├── cache/
+    │   ├── mod.rs
+    │   ├── archive.rs
+    │   ├── cache_file.rs
+    │   ├── compression/
+    │   │   ├── mod.rs
+    │   │   ├── bzip2.rs
+    │   │   └── gzip.rs
+    │   ├── definitions/
+    │   │   ├── mod.rs
+    │   │   ├── item.rs
+    │   │   ├── npc.rs
+    │   │   ├── object.rs
+    │   │   ├── animation.rs
+    │   │   └── graphic.rs
+    │   └── store.rs
+    ├── world/
+    │   ├── mod.rs
+    │   ├── location.rs
+    │   ├── map/
+    │   │   ├── mod.rs
+    │   │   ├── region.rs
+    │   │   ├── region_manager.rs
+    │   │   └── pathfinder.rs
+    │   ├── entity/
+    │   │   ├── mod.rs
+    │   │   ├── entity.rs
+    │   │   ├── player.rs
+    │   │   ├── npc.rs
+    │   │   └── update_flags.rs
+    │   ├── scene/
+    │   │   ├── mod.rs
+    │   │   ├── scene_graph.rs
+    │   │   └── viewport.rs
+    │   └── item/
+    │       ├── mod.rs
+    │       ├── item.rs
+    │       └── ground_item.rs
+    ├── game/
+    │   ├── mod.rs
+    │   ├── client.rs
+    │   ├── context.rs
+    │   ├── config.rs
+    │   ├── skills.rs
+    │   ├── login.rs
+    │   └── update.rs
+    ├── ui/
+    │   ├── mod.rs
+    │   ├── component.rs
+    │   ├── interface.rs
+    │   ├── tab.rs
+    │   └── widgets.rs
+    ├── renderer/
+    │   ├── mod.rs
+    │   ├── camera.rs
+    │   ├── engine.rs
+    │   ├── model.rs
+    │   ├── texture.rs
+    │   └── shader.rs
+    └── util/
+        ├── mod.rs
+        ├── logger.rs
+        ├── config.rs
+        ├── math.rs
+        └── crypto.rs

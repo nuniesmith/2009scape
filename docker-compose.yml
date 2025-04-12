@@ -1,4 +1,5 @@
 services:
+  # Game server
   app:
     build:
       context: .
@@ -15,8 +16,9 @@ services:
       - TZ=America/New_York
       - MYSQL_HOST=database
       - MYSQL_USER=jordan
-      - MYSQL_PASSWORD=567326
+      - MYSQL_PASSWORD=123456
       - MYSQL_DATABASE=2009scape
+      - JAVA_OPTS=-Xmx6G -Xms1G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
     ports:
       - "43594-43596:43594-43596"
     networks:
@@ -33,7 +35,8 @@ services:
           cpus: '8'
           memory: 8G
     user: "1001:1001"
-    
+
+  # Database service
   database:
     image: mysql:latest
     container_name: "2009scape_db"
@@ -45,14 +48,14 @@ services:
       - "./config/mysql/init:/docker-entrypoint-initdb.d"
     environment:
       - TZ=America/New_York
-      - MYSQL_ROOT_PASSWORD=567326
+      - MYSQL_ROOT_PASSWORD=123456
       - MYSQL_USER=jordan
-      - MYSQL_PASSWORD=567326
+      - MYSQL_PASSWORD=123456
       - MYSQL_DATABASE=2009scape
     networks:
       - 2009scape_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ujordan", "-p567326"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-ujordan", "-p123456"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -61,7 +64,9 @@ services:
         limits:
           cpus: '1'
           memory: 1G
-    
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  # Rust client service
   client:
     build:
       context: .
@@ -69,14 +74,20 @@ services:
     container_name: "2009scape_client"
     restart: unless-stopped
     ports:
-      - "6080:6080"
-      - "5900:5900"
+      - "8080:8080"  # WebSocket port
+      - "6080:6080"  # noVNC web interface
+      - "5900:5900"  # VNC port
     volumes:
-      - "2009scape_client_config:/home/appuser/.config"
+      - "2009scape_client_config:/home/bob/.config"
+      - "./cache:/app/cache"
+      - "./config:/app/config"
     environment:
       - TZ=America/New_York
       - SERVER_HOST=app
       - SERVER_PORT=43594
+      - RS2009_SERVER_HOST=app
+      - RS2009_SERVER_PORT=43594
+      - RS2009_WEBSOCKET_PORT=8080
       - DISPLAY=:1
       - VNC_PASSWORD=password
     depends_on:
@@ -94,35 +105,27 @@ services:
         limits:
           cpus: '4'
           memory: 4G
-    user: "1001:1001"
-    
-  nginx:
-    image: nginx:latest
-    container_name: "2009scape_nginx"
-    volumes:
-      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./config/nginx:/etc/nginx/conf.d:ro
-      - ./config/html:/usr/share/nginx/html:ro
-    environment:
-      - TZ=America/New_York
+    user: "1098:1098"  # Match the USER_ID/GROUP_ID from your Dockerfile
+
+  # Web server for client UI
+  web:
+    build:
+      context: .
+      dockerfile: ./nginx/Dockerfile
+    container_name: "2009scape_web"
+    restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
+    depends_on:
+      client:
+        condition: service_healthy
+    networks:
+      - 2009scape_network
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80"]
       interval: 30s
       timeout: 10s
       retries: 3
-    restart: unless-stopped
-    depends_on:
-      app:
-        condition: service_healthy
-      client:
-        condition: service_healthy
-      database:
-        condition: service_healthy
-    networks:
-      - 2009scape_network
     deploy:
       resources:
         limits:
@@ -131,13 +134,9 @@ services:
 
 volumes:
   2009scape_app_data:
-    name: 2009scape_app_data
   2009scape_app_logs:
-    name: 2009scape_app_logs
   2009scape_db:
-    name: 2009scape_db
   2009scape_client_config:
-    name: 2009scape_client_config
 
 networks:
   2009scape_network:
@@ -146,4 +145,3 @@ networks:
       driver: default
       config:
         - subnet: 172.28.0.0/16
-    name: 2009scape_network

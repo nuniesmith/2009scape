@@ -1,0 +1,69 @@
+JAVA TO RUST MIGRATION GUIDE
+==========================
+
+This guide highlights some key differences between Java and Rust to consider during migration.
+
+1. MEMORY MANAGEMENT
+-------------------
+Java: Garbage collected
+Rust: Ownership model with borrowing and lifetimes
+
+2. NULL HANDLING
+---------------
+Java: null references
+Rust: Option<T> type (Some/None)
+
+3. EXCEPTION HANDLING
+-------------------
+Java: try/catch/finally
+Rust: Result<T, E> type (Ok/Err)
+
+4. INHERITANCE VS COMPOSITION
+---------------------------
+Java: Class inheritance with 'extends'
+Rust: No inheritance, uses traits and composition
+
+5. INTERFACES VS TRAITS
+---------------------
+Java: interfaces
+Rust: traits
+
+6. GENERICS
+----------
+Java: Type erasure at runtime
+Rust: Monomorphization (specialized at compile time)
+
+7. CONCURRENCY
+------------
+Java: threads, synchronized, volatile
+Rust: threads, Send/Sync traits, Mutex, Arc
+
+8. COMMON JAVA PATTERNS AND RUST EQUIVALENTS
+------------------------------------------
+Java Collections → Rust Collections:
+- ArrayList → Vec
+- LinkedList → LinkedList (in std::collections)
+- HashMap → HashMap
+- HashSet → HashSet
+- TreeMap → BTreeMap
+- TreeSet → BTreeSet
+
+Java String → Rust String and &str
+Java primitive types → Rust primitive types
+Java Object → Rust structs or enums
+
+9. BUILD SYSTEMS
+--------------
+Java: Maven, Gradle
+Rust: Cargo
+
+10. TESTING
+---------
+Java: JUnit, TestNG
+Rust: Built-in testing framework (#[test])
+
+11. DOCUMENTATION
+--------------
+Java: Javadoc
+Rust: rustdoc (///)
+

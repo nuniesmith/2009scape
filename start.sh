@@ -1,402 +1,488 @@
 #!/bin/bash
+set -e
 
-# start.sh - Script to manage 2009scape Docker environment
-
-# Print with colors for better readability
-GREEN='\033[0;32m'
+# Color definitions
 RED='\033[0;31m'
-YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 CYAN='\033[0;36m'
+BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Default docker-compose file location
-COMPOSE_FILE="docker-compose.yml"
+# Script version
+VERSION="1.1.0"
+
+# Docker Compose command - support both v1 and v2 CLI
+if docker compose version &>/dev/null; then
+    DOCKER_COMPOSE="docker compose"
+elif docker-compose --version &>/dev/null; then
+    DOCKER_COMPOSE="docker-compose"
+else
+    echo -e "${RED}Error: Neither 'docker compose' nor 'docker-compose' found.${NC}"
+    echo -e "Please install Docker Compose: https://docs.docker.com/compose/install/"
+    exit 1
+fi
+
+# Function to display help
+function show_help {
+    echo -e "${BLUE}${BOLD}2009Scape Docker Management Script v${VERSION}${NC}"
+    echo
+    echo -e "Usage: ${GREEN}./start.sh${NC} ${YELLOW}<command>${NC} ${YELLOW}[service]${NC} ${YELLOW}[options]${NC}"
+    echo
+    echo -e "${BLUE}${BOLD}Commands:${NC}"
+    echo -e "  ${GREEN}start${NC}      Start one or all services"
+    echo -e "  ${GREEN}stop${NC}       Stop one or all services"
+    echo -e "  ${GREEN}restart${NC}    Restart one or all services"
+    echo -e "  ${GREEN}status${NC}     Check status of one or all services"
+    echo -e "  ${GREEN}logs${NC}       View logs for one or all services"
+    echo -e "  ${GREEN}rebuild${NC}    Rebuild and start one or all services"
+    echo -e "  ${GREEN}pull${NC}       Pull latest images for services"
+    echo -e "  ${GREEN}prune${NC}      Remove unused Docker resources"
+    echo -e "  ${GREEN}backup${NC}     Backup volumes (database, app data)"
+    echo -e "  ${GREEN}restore${NC}    Restore from backup"
+    echo -e "  ${GREEN}exec${NC}       Execute a command in a running container"
+    echo -e "  ${GREEN}health${NC}     Check health status of services"
+    echo -e "  ${GREEN}version${NC}    Show version information"
+    echo
+    echo -e "${BLUE}${BOLD}Services:${NC}"
+    echo -e "  ${YELLOW}app${NC}        Game server application"
+    echo -e "  ${YELLOW}database${NC}   MySQL database server"
+    echo -e "  ${YELLOW}client${NC}     Web-based game client"
+    echo -e "  ${YELLOW}web${NC}        Web server (nginx)"
+    echo -e "  ${YELLOW}all${NC}        All services (default if not specified)"
+    echo
+    echo -e "${BLUE}${BOLD}Options:${NC}"
+    echo -e "  ${YELLOW}-d, --detach${NC}     Run containers in detached mode"
+    echo -e "  ${YELLOW}-f, --force${NC}      Force rebuild of containers"
+    echo -e "  ${YELLOW}-c, --clean${NC}      Remove orphaned containers"
+    echo -e "  ${YELLOW}-t, --tail=N${NC}     Show last N lines of logs (default: 100)"
+    echo -e "  ${YELLOW}--debug${NC}          Enable debug mode (verbose output)"
+    echo -e "  ${YELLOW}-h, --help${NC}       Show this help message"
+    echo
+    echo -e "${BLUE}${BOLD}Examples:${NC}"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}start all${NC}          # Start all services"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}start app -d${NC}       # Start only the app service in detached mode"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}logs client -t 50${NC}  # Show last 50 log lines for the client service"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}rebuild app -d${NC}     # Rebuild and start app service in detached mode"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}exec app bash${NC}      # Open a bash shell in the app container"
+    echo -e "  ${GREEN}./start.sh${NC} ${YELLOW}backup${NC}             # Backup all volumes"
+    echo
+}
+
+# Function to check Docker runtime
+function check_docker {
+    if ! command -v docker &>/dev/null; then
+        echo -e "${RED}Error: Docker is not installed or not in PATH${NC}"
+        echo -e "Please install Docker: https://docs.docker.com/get-docker/"
+        exit 1
+    fi
+
+    if ! docker info &>/dev/null; then
+        echo -e "${RED}Error: Docker daemon is not running or current user lacks permissions${NC}"
+        echo -e "Try running Docker service or adding your user to the 'docker' group"
+        exit 1
+    fi
+}
+
+# Function to check for docker-compose.yml
+function check_compose_file {
+    if [[ ! -f "docker-compose.yml" && ! -f "compose.yaml" ]]; then
+        echo -e "${RED}Error: No docker-compose.yml or compose.yaml file found in current directory${NC}"
+        echo -e "Make sure you're running this script from the project root directory"
+        exit 1
+    fi
+}
+
+# Function to check service health
+function check_health {
+    local service=$1
+    local container_name
+
+    if [[ "$service" == "all" ]]; then
+        echo -e "${BLUE}${BOLD}Checking health of all services:${NC}"
+        local services=("app" "database" "client" "web")
+        for svc in "${services[@]}"; do
+            check_health "$svc"
+        done
+        return
+    fi
+
+    case "$service" in
+        app)
+            container_name="2009scape_app"
+            ;;
+        database)
+            container_name="2009scape_db"
+            ;;
+        client)
+            container_name="2009scape_client"
+            ;;
+        web)
+            container_name="2009scape_web"
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown service '$service'${NC}"
+            return 1
+            ;;
+    esac
+
+    # Check if container is running
+    if ! docker ps -q -f "name=$container_name" | grep -q .; then
+        echo -e "${service}: ${RED}Not running${NC}"
+        return
+    fi
+
+    # Check health status if available
+    local health_status=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo "no health check")
+    
+    case "$health_status" in
+        "healthy")
+            echo -e "${service}: ${GREEN}Healthy${NC}"
+            ;;
+        "unhealthy")
+            echo -e "${service}: ${RED}Unhealthy${NC}"
+            ;;
+        "starting")
+            echo -e "${service}: ${YELLOW}Starting${NC}"
+            ;;
+        "no health check")
+            local status=$(docker inspect --format='{{.State.Status}}' "$container_name")
+            if [[ "$status" == "running" ]]; then
+                echo -e "${service}: ${CYAN}Running (no health check)${NC}"
+            else
+                echo -e "${service}: ${YELLOW}${status}${NC}"
+            fi
+            ;;
+        *)
+            echo -e "${service}: ${YELLOW}${health_status}${NC}"
+            ;;
+    esac
+}
+
+# Function to backup volumes
+function backup_volumes {
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local backup_dir="backups/${timestamp}"
+    
+    echo -e "${BLUE}Creating backup in ${backup_dir}...${NC}"
+    mkdir -p "${backup_dir}"
+    
+    # Backup MySQL database
+    echo -e "${YELLOW}Backing up database...${NC}"
+    docker exec 2009scape_db mysqldump -u jordan -p567326 --all-databases > "${backup_dir}/database_dump.sql" 2>/dev/null || {
+        echo -e "${RED}Failed to backup database${NC}"
+    }
+    
+    # Backup app data
+    echo -e "${YELLOW}Backing up app data...${NC}"
+    docker run --rm -v 2009scape_app_data:/source -v $(pwd)/${backup_dir}:/backup alpine tar -czf /backup/app_data.tar.gz -C /source . || {
+        echo -e "${RED}Failed to backup app data${NC}"
+    }
+    
+    # Backup client config
+    echo -e "${YELLOW}Backing up client configuration...${NC}"
+    docker run --rm -v 2009scape_client_config:/source -v $(pwd)/${backup_dir}:/backup alpine tar -czf /backup/client_config.tar.gz -C /source . || {
+        echo -e "${RED}Failed to backup client configuration${NC}"
+    }
+    
+    echo -e "${GREEN}Backup completed: ${backup_dir}${NC}"
+}
+
+# Function to restore from backup
+function restore_from_backup {
+    local backup_path=$1
+    
+    if [[ -z "$backup_path" ]]; then
+        echo -e "${RED}Error: No backup path specified${NC}"
+        echo -e "Usage: ${GREEN}./start.sh${NC} ${YELLOW}restore <backup_dir>${NC}"
+        return 1
+    fi
+    
+    if [[ ! -d "$backup_path" ]]; then
+        echo -e "${RED}Error: Backup directory not found: ${backup_path}${NC}"
+        return 1
+    fi
+    
+    # Stop services
+    echo -e "${YELLOW}Stopping services for restore...${NC}"
+    $DOCKER_COMPOSE down
+    
+    # Restore database
+    if [[ -f "${backup_path}/database_dump.sql" ]]; then
+        echo -e "${YELLOW}Restoring database...${NC}"
+        $DOCKER_COMPOSE up -d database
+        sleep 10  # Give database time to start
+        docker exec -i 2009scape_db mysql -u jordan -p567326 < "${backup_path}/database_dump.sql" || {
+            echo -e "${RED}Failed to restore database${NC}"
+        }
+    else
+        echo -e "${RED}Database dump not found in backup${NC}"
+    fi
+    
+    # Restore app data
+    if [[ -f "${backup_path}/app_data.tar.gz" ]]; then
+        echo -e "${YELLOW}Restoring app data...${NC}"
+        docker run --rm -v 2009scape_app_data:/dest -v $(pwd)/${backup_path}:/backup alpine sh -c "rm -rf /dest/* && tar -xzf /backup/app_data.tar.gz -C /dest" || {
+            echo -e "${RED}Failed to restore app data${NC}"
+        }
+    else
+        echo -e "${RED}App data backup not found${NC}"
+    fi
+    
+    # Restore client config
+    if [[ -f "${backup_path}/client_config.tar.gz" ]]; then
+        echo -e "${YELLOW}Restoring client configuration...${NC}"
+        docker run --rm -v 2009scape_client_config:/dest -v $(pwd)/${backup_path}:/backup alpine sh -c "rm -rf /dest/* && tar -xzf /backup/client_config.tar.gz -C /dest" || {
+            echo -e "${RED}Failed to restore client configuration${NC}"
+        }
+    else
+        echo -e "${RED}Client configuration backup not found${NC}"
+    fi
+    
+    echo -e "${GREEN}Restore completed${NC}"
+    echo -e "${YELLOW}Starting services...${NC}"
+    $DOCKER_COMPOSE up -d
+}
+
+# Set defaults
 COMMAND="start"
+SERVICE="all"
+DETACHED=""
+FORCE=""
+CLEAN=""
+LOG_TAIL="100"
+DEBUG=""
+EXEC_COMMAND=""
 
-# Function to check if a command exists
-command_exists() {
-    command -v "$1" >/dev/null 2>&1
-}
-
-# Function to display usage information
-show_help() {
-    echo "Usage: $0 [OPTIONS] [COMMAND]"
-    echo
-    echo "Commands:"
-    echo "  start      Start the 2009Scape containers (default)"
-    echo "  stop       Stop the 2009Scape containers"
-    echo "  restart    Restart the 2009Scape containers"
-    echo "  status     Show the status of 2009Scape containers"
-    echo "  logs       View logs for all containers or specific container"
-    echo
-    echo "Options:"
-    echo "  -f, --file FILE    Specify the docker-compose file (default: docker-compose.yml)"
-    echo "  -c, --container    Specify container for logs (app, db, client, nginx)"
-    echo "  -h, --help         Show this help message"
-    echo
-}
-
-# Function to display container status
-show_status() {
-    echo -e "${BLUE}Container Status:${NC}"
-    
-    # Check app container
-    if docker ps --format '{{.Names}}' | grep -q "2009scape_app"; then
-        echo -e "${GREEN}Game Server (2009scape_app): Running${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "2009scape_app"; then
-        echo -e "${RED}Game Server (2009scape_app): Stopped${NC}"
-    else
-        echo -e "${YELLOW}Game Server (2009scape_app): Not created${NC}"
-    fi
-    
-    # Check database container
-    if docker ps --format '{{.Names}}' | grep -q "2009scape_db"; then
-        echo -e "${GREEN}Database (2009scape_db): Running${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "2009scape_db"; then
-        echo -e "${RED}Database (2009scape_db): Stopped${NC}"
-    else
-        echo -e "${YELLOW}Database (2009scape_db): Not created${NC}"
-    fi
-    
-    # Check client container
-    if docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-        echo -e "${GREEN}Web Client (2009scape_client): Running${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "2009scape_client"; then
-        echo -e "${RED}Web Client (2009scape_client): Stopped${NC}"
-    else
-        echo -e "${YELLOW}Web Client (2009scape_client): Not created${NC}"
-    fi
-    
-    # Check nginx container
-    if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-        echo -e "${GREEN}Web Server (2009scape_nginx): Running${NC}"
-    elif docker ps -a --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-        echo -e "${RED}Web Server (2009scape_nginx): Stopped${NC}"
-    else
-        echo -e "${YELLOW}Web Server (2009scape_nginx): Not created${NC}"
-    fi
-    
-    # If running, show more details
-    if docker ps --format '{{.Names}}' | grep -q "2009scape_app"; then
-        echo
-        echo -e "${BLUE}Access Information:${NC}"
-        
-        # Web interface info
-        if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-            echo -e "→ ${CYAN}Web Interface:${NC} ${GREEN}http://localhost${NC} (or domain names in hosts file)"
-            echo -e "  ${CYAN}Direct Web Client:${NC} ${GREEN}http://localhost/client/${NC}"
-            echo -e "  ${CYAN}Status Page:${NC} ${GREEN}http://localhost/status${NC}"
-        elif docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-            echo -e "→ ${CYAN}Direct Web Client:${NC} ${GREEN}http://localhost:6080${NC}"
-        fi
-        
-        # Game server info
-        echo -e "→ ${CYAN}Game Server:${NC} ${GREEN}localhost:43595${NC} (for direct client connections)"
-        
-        # Database info
-        if docker ps --format '{{.Names}}' | grep -q "2009scape_db"; then
-            echo -e "→ ${CYAN}Database:${NC} ${GREEN}localhost:3306${NC}"
-            echo -e "  ${CYAN}Username:${NC} jordan"
-            echo -e "  ${CYAN}Password:${NC} 567326"
-        fi
-    fi
-}
-
-# Set default container name for logs
-CONTAINER=""
-
-# Parse command line arguments
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        start|stop|restart|status|logs)
+# Parse arguments
+if [[ $# -gt 0 ]]; then
+    case "$1" in
+        start|stop|restart|status|logs|rebuild|pull|prune|backup|restore|exec|health|version)
             COMMAND="$1"
             shift
-            ;;
-        -f|--file)
-            COMPOSE_FILE="$2"
-            shift 2
-            ;;
-        -c|--container)
-            CONTAINER="$2"
-            shift 2
             ;;
         -h|--help)
             show_help
             exit 0
             ;;
         *)
-            echo -e "${RED}Unknown option: $1${NC}"
+            # Check if first argument is a service name
+            if [[ "$1" =~ ^(app|database|client|web|all)$ ]]; then
+                SERVICE="$1"
+                shift
+            else
+                echo -e "${RED}Error: Unknown command '$1'${NC}"
+                show_help
+                exit 1
+            fi
+            ;;
+    esac
+fi
+
+# Check if service is specified as second argument
+if [[ $# -gt 0 && "$1" =~ ^(app|database|client|web|all)$ ]]; then
+    SERVICE="$1"
+    shift
+fi
+
+# Special case for exec command which needs the exec command
+if [[ "$COMMAND" == "exec" && $# -gt 0 ]]; then
+    EXEC_COMMAND="$*"
+    shift $#
+elif [[ "$COMMAND" == "exec" && $# -eq 0 ]]; then
+    echo -e "${RED}Error: No command specified for exec${NC}"
+    echo -e "Usage: ${GREEN}./start.sh${NC} ${YELLOW}exec <service> <command>${NC}"
+    exit 1
+fi
+
+# Special case for restore command which needs the backup path
+if [[ "$COMMAND" == "restore" && $# -gt 0 ]]; then
+    BACKUP_PATH="$1"
+    shift
+fi
+
+# Parse options
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        -d|--detach)
+            DETACHED="-d"
+            shift
+            ;;
+        -f|--force)
+            FORCE="--no-cache"
+            shift
+            ;;
+        -c|--clean)
+            CLEAN="--remove-orphans"
+            shift
+            ;;
+        -t|--tail=*)
+            if [[ "$1" == "--tail="* ]]; then
+                LOG_TAIL="${1#*=}"
+            else
+                LOG_TAIL="$2"
+                shift
+            fi
+            shift
+            ;;
+        --debug)
+            DEBUG="true"
+            set -x  # Enable debug output
+            shift
+            ;;
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option '$1'${NC}"
             show_help
             exit 1
             ;;
     esac
 done
 
-# For status command, we don't need to check for Docker installation
-if [ "$COMMAND" = "status" ]; then
-    show_status
-    exit 0
+# Check Docker environment
+check_docker
+
+# Check for compose file (except for version command)
+if [[ "$COMMAND" != "version" ]]; then
+    check_compose_file
 fi
 
-# Special handling for logs command
-if [ "$COMMAND" = "logs" ]; then
-    # Check if Docker is installed first
-    if ! command_exists docker; then
-        echo -e "${RED}Error: Docker is not installed. Please install Docker first.${NC}"
-        exit 1
-    fi
-    
-    # Check if Docker Compose is installed
-    if ! command_exists docker-compose; then
-        echo -e "${RED}Error: Docker Compose is not installed. Please install Docker Compose first.${NC}"
-        exit 1
-    fi
-
-    # View logs for specific container or all
-    if [ -n "$CONTAINER" ]; then
-        case $CONTAINER in
-            app)
-                docker logs -f 2009scape_app
-                ;;
-            db)
-                docker logs -f 2009scape_db
-                ;;
-            client)
-                docker logs -f 2009scape_client
-                ;;
-            nginx)
-                docker logs -f 2009scape_nginx
-                ;;
-            *)
-                echo -e "${RED}Unknown container: $CONTAINER${NC}"
-                echo -e "Valid containers: app, db, client, nginx"
-                exit 1
-                ;;
-        esac
-    else
-        # Show logs for all containers
-        docker-compose -f "$COMPOSE_FILE" logs -f
-    fi
-    exit 0
-fi
-
-# Check if docker-compose file exists
-if [ ! -f "$COMPOSE_FILE" ]; then
-    echo -e "${RED}Error: Docker Compose file '$COMPOSE_FILE' not found.${NC}"
-    exit 1
-fi
-
-# Check if Docker is installed
-if ! command_exists docker; then
-    echo -e "${RED}Error: Docker is not installed. Please install Docker first.${NC}"
-    exit 1
-fi
-
-# Check if Docker Compose is installed
-if ! command_exists docker-compose; then
-    echo -e "${RED}Error: Docker Compose is not installed. Please install Docker Compose first.${NC}"
-    exit 1
-fi
-
-# Check if Docker daemon is running
-if ! docker info > /dev/null 2>&1; then
-    echo -e "${RED}Error: Docker daemon is not running. Please start Docker and try again.${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}Docker environment checks passed.${NC}"
-
-# Function to prepare nginx directories and files
-prepare_nginx() {
-    # Create necessary directories
-    mkdir -p config/nginx
-    mkdir -p config/html
-    
-    # Check if default.conf exists, if not create it
-    if [ ! -f ./config/nginx/default.conf ]; then
-        echo -e "${YELLOW}Creating default NGINX configuration...${NC}"
-        # Copy our default.conf to the config/nginx directory
-        cp ./default.conf ./config/nginx/default.conf 2>/dev/null || {
-            echo -e "${YELLOW}Warning: default.conf not found, creating a basic one.${NC}"
-            # Basic conf if our template isn't available
-            cat > ./config/nginx/default.conf << 'EOF'
-server {
-    listen 80;
-    server_name localhost;
-
-    location / {
-        proxy_pass http://client:6080;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-
-    location /status {
-        root /usr/share/nginx/html;
-        try_files /status.html =404;
-    }
-}
-EOF
-        }
-    fi
-    
-    # Check if status.html exists, if not create it
-    if [ ! -f ./config/html/status.html ]; then
-        echo -e "${YELLOW}Creating status page...${NC}"
-        # Copy our status.html to the config/html directory
-        cp ./status.html ./config/html/status.html 2>/dev/null || {
-            echo -e "${YELLOW}Warning: status.html not found, creating a basic one.${NC}"
-            # Basic status page if our template isn't available
-            cat > ./config/html/status.html << 'EOF'
-<!DOCTYPE html>
-<html>
-<head>
-    <title>2009scape Status</title>
-    <style>
-        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-        h1 { color: #5D87A1; }
-        .status { padding: 10px; margin: 10px 0; border-radius: 4px; }
-        .online { background-color: #DFF2BF; color: #4F8A10; }
-        .offline { background-color: #FFBABA; color: #D8000C; }
-    </style>
-</head>
-<body>
-    <h1>2009scape Server Status</h1>
-    <div class="status online">Game Server: Online</div>
-    <div class="status online">Web Client: Online</div>
-    <div class="status online">Database: Online</div>
-    <p>For more information, please visit the <a href="https://gitlab.com/2009scape/2009scape">2009scape GitLab project</a>.</p>
-</body>
-</html>
-EOF
-        }
-    fi
-}
-
-# Handle different commands
-case $COMMAND in
+# Execute command
+case "$COMMAND" in
     start)
-        # Create necessary directories if they don't exist
-        mkdir -p server/db_exports
-        
-        # Prepare NGINX files if needed
-        prepare_nginx
-
-        # Check if global.sql exists
-        if [ ! -f ./Server/db_exports/global.sql ]; then
-            echo -e "${YELLOW}Warning: global.sql not found in server/db_exports/.${NC}"
-            echo -e "${YELLOW}Make sure to provide this file or the database initialization will fail.${NC}"
-        fi
-
-        # Build and start the containers
-        echo -e "${YELLOW}Building and starting containers...${NC}"
-        docker-compose -f "$COMPOSE_FILE" up -d --build
-
-        # Check if containers are running
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}2009Scape containers started successfully!${NC}"
-            
-            # Check which containers are actually running and report
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_app"; then
-                echo -e "${GREEN}→ Game Server: 2009scape_app (port 43595)${NC}"
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${GREEN}Starting all services...${NC}"
+            if [ -n "$FORCE" ]; then
+                $DOCKER_COMPOSE build $FORCE
             fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_db"; then
-                echo -e "${GREEN}→ Database: 2009scape_db (port 3306)${NC}"
-            fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-                echo -e "${GREEN}→ Web Client: 2009scape_client (ports 6080, 5900)${NC}"
-            fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-                echo -e "${GREEN}→ Web Server: 2009scape_nginx (port 80)${NC}"
-            fi
-            
-            echo
-            echo -e "${BLUE}Access Information:${NC}"
-            
-            # Web interface info
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-                echo -e "→ ${CYAN}Web Interface:${NC} ${GREEN}http://localhost${NC}"
-                echo -e "  ${CYAN}Status Page:${NC} ${GREEN}http://localhost/status${NC}"
-            elif docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-                echo -e "→ ${CYAN}Web Client:${NC} ${GREEN}http://localhost:6080${NC}"
-            fi
-            
-            # Game server info
-            echo -e "→ ${CYAN}Game Server:${NC} ${GREEN}localhost:43595${NC} (for direct client connections)"
-            
-            echo
-            echo -e "${YELLOW}You can view logs with: ./start.sh logs${NC}"
-            echo -e "${YELLOW}View status anytime with: ./start.sh status${NC}"
+            $DOCKER_COMPOSE up $DETACHED $CLEAN
         else
-            echo -e "${RED}Failed to start containers. Check the error messages above.${NC}"
-            exit 1
+            echo -e "${GREEN}Starting service: ${BLUE}$SERVICE${NC}"
+            if [ -n "$FORCE" ]; then
+                $DOCKER_COMPOSE build $FORCE $SERVICE
+            fi
+            $DOCKER_COMPOSE up $DETACHED $SERVICE
         fi
         ;;
     stop)
-        echo -e "${YELLOW}Stopping 2009Scape containers...${NC}"
-        docker-compose -f "$COMPOSE_FILE" down
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}2009Scape containers stopped successfully.${NC}"
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${YELLOW}Stopping all services...${NC}"
+            $DOCKER_COMPOSE down $CLEAN
         else
-            echo -e "${RED}Failed to stop containers. Check the error messages above.${NC}"
-            exit 1
+            echo -e "${YELLOW}Stopping service: ${BLUE}$SERVICE${NC}"
+            $DOCKER_COMPOSE stop $SERVICE
         fi
         ;;
     restart)
-        echo -e "${YELLOW}Restarting 2009Scape containers...${NC}"
-        docker-compose -f "$COMPOSE_FILE" down
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}Failed to stop containers.${NC}"
-        fi
-        
-        # Prepare NGINX files if needed
-        prepare_nginx
-        
-        echo -e "${YELLOW}Starting containers again...${NC}"
-        docker-compose -f "$COMPOSE_FILE" up -d --build
-        if [ $? -eq 0 ]; then
-            echo -e "${GREEN}2009Scape containers restarted successfully!${NC}"
-            
-            # Check which containers are actually running and report
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_app"; then
-                echo -e "${GREEN}→ Game Server: 2009scape_app (port 43595)${NC}"
-            fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_db"; then
-                echo -e "${GREEN}→ Database: 2009scape_db (port 3306)${NC}"
-            fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-                echo -e "${GREEN}→ Web Client: 2009scape_client (ports 6080, 5900)${NC}"
-            fi
-            
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-                echo -e "${GREEN}→ Web Server: 2009scape_nginx (port 80)${NC}"
-            fi
-            
-            echo
-            echo -e "${BLUE}Access Information:${NC}"
-            
-            # Web interface info
-            if docker ps --format '{{.Names}}' | grep -q "2009scape_nginx"; then
-                echo -e "→ ${CYAN}Web Interface:${NC} ${GREEN}http://localhost${NC}"
-                echo -e "  ${CYAN}Status Page:${NC} ${GREEN}http://localhost/status${NC}"
-            elif docker ps --format '{{.Names}}' | grep -q "2009scape_client"; then
-                echo -e "→ ${CYAN}Web Client:${NC} ${GREEN}http://localhost:6080${NC}"
-            fi
-            
-            # Game server info
-            echo -e "→ ${CYAN}Game Server:${NC} ${GREEN}localhost:43595${NC} (for direct client connections)"
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${YELLOW}Restarting all services...${NC}"
+            $DOCKER_COMPOSE restart
         else
-            echo -e "${RED}Failed to restart containers. Check the error messages above.${NC}"
-            exit 1
+            echo -e "${YELLOW}Restarting service: ${BLUE}$SERVICE${NC}"
+            $DOCKER_COMPOSE restart $SERVICE
         fi
+        ;;
+    status)
+        echo -e "${BLUE}${BOLD}Checking status of containers:${NC}"
+        if [ "$SERVICE" = "all" ]; then
+            $DOCKER_COMPOSE ps
+        else
+            $DOCKER_COMPOSE ps $SERVICE
+        fi
+        ;;
+    logs)
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${BLUE}${BOLD}Showing logs for all services:${NC}"
+            $DOCKER_COMPOSE logs --tail=$LOG_TAIL -f
+        else
+            echo -e "${BLUE}${BOLD}Showing logs for service: ${GREEN}$SERVICE${NC}"
+            $DOCKER_COMPOSE logs --tail=$LOG_TAIL -f $SERVICE
+        fi
+        ;;
+    rebuild)
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${GREEN}Rebuilding and starting all services...${NC}"
+            $DOCKER_COMPOSE down $CLEAN
+            $DOCKER_COMPOSE build $FORCE
+            $DOCKER_COMPOSE up $DETACHED
+        else
+            echo -e "${GREEN}Rebuilding and starting service: ${BLUE}$SERVICE${NC}"
+            $DOCKER_COMPOSE stop $SERVICE
+            $DOCKER_COMPOSE rm -f $SERVICE
+            $DOCKER_COMPOSE build $FORCE $SERVICE
+            $DOCKER_COMPOSE up $DETACHED $SERVICE
+        fi
+        ;;
+    pull)
+        if [ "$SERVICE" = "all" ]; then
+            echo -e "${BLUE}Pulling latest images for all services...${NC}"
+            $DOCKER_COMPOSE pull
+        else
+            echo -e "${BLUE}Pulling latest image for service: ${GREEN}$SERVICE${NC}"
+            $DOCKER_COMPOSE pull $SERVICE
+        fi
+        ;;
+    prune)
+        echo -e "${YELLOW}Cleaning up unused Docker resources...${NC}"
+        docker system prune -f
+        echo -e "${GREEN}Cleaned up unused Docker resources${NC}"
+        ;;
+    backup)
+        backup_volumes
+        ;;
+    restore)
+        restore_from_backup "$BACKUP_PATH"
+        ;;
+    exec)
+        echo -e "${BLUE}Executing command in ${SERVICE} container: ${YELLOW}${EXEC_COMMAND}${NC}"
+        $DOCKER_COMPOSE exec $SERVICE $EXEC_COMMAND
+        ;;
+    health)
+        check_health "$SERVICE"
+        ;;
+    version)
+        echo -e "${BLUE}${BOLD}2009Scape Docker Management Script v${VERSION}${NC}"
+        echo
+        echo -e "${YELLOW}Docker version:${NC}"
+        docker --version
+        echo
+        echo -e "${YELLOW}Docker Compose version:${NC}"
+        $DOCKER_COMPOSE version
         ;;
 esac
 
-exit 0
+# Show helpful message after starting services
+if [[ "$COMMAND" == "start" || "$COMMAND" == "rebuild" ]] && [[ -n "$DETACHED" ]]; then
+    echo
+    echo -e "${GREEN}${BOLD}Services started in detached mode. Use these commands to interact:${NC}"
+    echo -e "  ${YELLOW}./start.sh status${NC}         # Check container status"
+    echo -e "  ${YELLOW}./start.sh logs${NC}           # View logs from all services"
+    echo -e "  ${YELLOW}./start.sh health${NC}         # Check health status of services"
+    
+    if [[ "$SERVICE" == "all" || "$SERVICE" == "client" ]]; then
+        echo
+        echo -e "${GREEN}${BOLD}To access the web client:${NC}"
+        echo -e "  ${YELLOW}http://localhost:6080${NC}     # Direct noVNC connection"
+        echo -e "  ${YELLOW}http://localhost${NC}          # Via Nginx (if configured)"
+    fi
+    
+    if [[ "$SERVICE" == "all" || "$SERVICE" == "app" ]]; then
+        echo
+        echo -e "${GREEN}${BOLD}Game server information:${NC}"
+        echo -e "  ${YELLOW}Server port: 43594${NC}"
+        echo -e "  ${YELLOW}Management ports: 43595-43596${NC}"
+    fi
+
+    # Check service health after startup if not debugging
+    if [[ -z "$DEBUG" ]]; then
+        echo
+        echo -e "${BLUE}${BOLD}Initial health check:${NC}"
+        sleep 5  # Give services a moment to start
+        check_health "$SERVICE"
+    fi
+fi
