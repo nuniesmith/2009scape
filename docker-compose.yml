@@ -3,7 +3,7 @@ services:
   app:
     build:
       context: .
-      dockerfile: ./server/Dockerfile
+      dockerfile: ./docker/server/Dockerfile
     container_name: "2009scape_app"
     depends_on:
       database:
@@ -12,46 +12,43 @@ services:
     volumes:
       - "2009scape_app_data:/app/2009scape/data"
       - "2009scape_app_logs:/app/2009scape/logs"
+      # Mount SQL files for database initialization
+      - "./config/mysql/init:/docker-entrypoint-initdb.d:ro"
     environment:
       - TZ=America/New_York
       - MYSQL_HOST=database
       - MYSQL_USER=jordan
       - MYSQL_PASSWORD=123456
-      - MYSQL_DATABASE=2009scape
+      - MYSQL_DATABASE=global
       - JAVA_OPTS=-Xmx6G -Xms1G -XX:+UseG1GC -XX:+ParallelRefProcEnabled -XX:MaxGCPauseMillis=200
     ports:
       - "43594-43596:43594-43596"
+      - "5555:5555"
     networks:
       - 2009scape_network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "43594"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     deploy:
       resources:
         limits:
           cpus: '8'
           memory: 8G
-    user: "1001:1001"
 
   # Database service
   database:
-    image: mysql:latest
+    image: mysql:8.0
     container_name: "2009scape_db"
     restart: always
     ports:
       - "3306:3306"
     volumes:
       - "2009scape_db:/var/lib/mysql"
-      - "./config/mysql/init:/docker-entrypoint-initdb.d"
+      - "./config/mysql/init:/docker-entrypoint-initdb.d:ro"
     environment:
       - TZ=America/New_York
-      - MYSQL_ROOT_PASSWORD=123456
+      - MYSQL_ROOT_PASSWORD=root
       - MYSQL_USER=jordan
       - MYSQL_PASSWORD=123456
-      - MYSQL_DATABASE=2009scape
+      - MYSQL_DATABASE=global
+      - MYSQL_ROOT_HOST=%
     networks:
       - 2009scape_network
     healthcheck:
@@ -66,20 +63,19 @@ services:
           memory: 1G
     command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
 
-  # Rust client service
+  # Client service
   client:
     build:
       context: .
-      dockerfile: ./client/Dockerfile
+      dockerfile: ./docker/client/Dockerfile
     container_name: "2009scape_client"
     restart: unless-stopped
     ports:
-      - "8080:8080"  # WebSocket port
-      - "6080:6080"  # noVNC web interface
-      - "5900:5900"  # VNC port
+      - "8080:8080" # WebSocket port
+      - "6080:6080" # noVNC web interface
+      - "5900:5900" # VNC port
     volumes:
-      - "2009scape_client_config:/home/bob/.config"
-      - "./cache:/app/cache"
+      # - "2009scape_client_config:/home/player/.config"
       - "./config:/app/config"
     environment:
       - TZ=America/New_York
@@ -90,35 +86,23 @@ services:
       - RS2009_WEBSOCKET_PORT=8080
       - DISPLAY=:1
       - VNC_PASSWORD=password
-    depends_on:
-      app:
-        condition: service_healthy
     networks:
       - 2009scape_network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "6080"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
     deploy:
       resources:
         limits:
           cpus: '4'
           memory: 4G
-    user: "1098:1098"  # Match the USER_ID/GROUP_ID from your Dockerfile
 
   # Web server for client UI
-  web:
+  nginx:
     build:
       context: .
-      dockerfile: ./nginx/Dockerfile
-    container_name: "2009scape_web"
+      dockerfile: ./docker/nginx/Dockerfile
+    container_name: "2009scape_nginx"
     restart: unless-stopped
     ports:
       - "80:80"
-    depends_on:
-      client:
-        condition: service_healthy
     networks:
       - 2009scape_network
     healthcheck:
@@ -132,6 +116,7 @@ services:
           cpus: '0.5'
           memory: 512M
 
+# You can uncomment these if you want to use named volumes
 volumes:
   2009scape_app_data:
   2009scape_app_logs:
